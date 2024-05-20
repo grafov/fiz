@@ -1,6 +1,11 @@
 const std = @import("std");
 const allocator = std.debug.global_allocator;
 
+const str = []const u8;
+const defaultIcon: str = " ";
+const fileIcon: str = " ";
+const folderIcon: str = "🗀";
+
 pub fn main() !void {
     const stdout_file = std.io.getStdOut().writer();
     const stderr_file = std.io.getStdErr().writer();
@@ -45,8 +50,43 @@ pub fn main() !void {
         return;
     };
     var iterator = dir.iterate();
+    var buf: [1024]u8 = undefined;
+    var size: str = "";
+    var mask: str = "";
+    var icon: str = "";
     while (try iterator.next()) |it| {
-        try stdout.print("{s}\n", .{it.name});
+        switch (it.kind) {
+            std.fs.File.Kind.file => {
+                const stat = std.fs.Dir.statFile(dir, it.name) catch |err| {
+                    try stderr.print("fi: can't stat file '{s}: {}'\n", .{ it.name, err });
+                    continue;
+                };
+                size = std.fmt.bufPrint(&buf, "{s:.2}", .{std.fmt.fmtIntSizeBin(stat.size)}) catch |err| {
+                    try stderr.print("fi: not enough memory for string conversion: {}\n", .{err});
+                    continue;
+                };
+                mask = displayMask(stat.mode);
+                icon = fileIcon;
+            },
+            std.fs.File.Kind.directory => {
+                const stat = std.fs.Dir.statFile(dir, it.name) catch |err| {
+                    try stderr.print("fi: can't stat file '{s}: {}'\n", .{ it.name, err });
+                    continue;
+                };
+                size = std.fmt.bufPrint(&buf, "{s:.2}", .{std.fmt.fmtIntSizeBin(stat.size)}) catch |err| {
+                    try stderr.print("fi: not enough memory for string conversion: {}\n", .{err});
+                    continue;
+                };
+                mask = displayMask(stat.mode);
+                icon = folderIcon;
+            },
+            else => {
+                size = "";
+                mask = "";
+                icon = defaultIcon;
+            },
+        }
+        try stdout.print("{s:<1}{s:15} {s}\n", .{ icon, size, it.name });
     }
 }
 
@@ -56,3 +96,21 @@ test "simple test" {
     try list.append(42);
     try std.testing.expectEqual(@as(i32, 42), list.pop());
 }
+
+fn displayMask(m: std.fs.File.Mode) str {
+    if (m == 0) {
+        return ""; // amask.get(0);
+    }
+    return "";
+}
+
+var amask = std.AutoArrayHashMapUnmanaged(u8, []const u8){
+    .{ 0b000, "☰" }, // ---
+    .{ 0b001, "☴" }, // --x
+    .{ 0b010, "☲" }, // -w-
+    .{ 0b011, "☶" }, // -wx
+    .{ 0b100, "☱" }, // r--
+    .{ 0b101, "☵" }, // r-x
+    .{ 0b110, "☳" }, // rw-
+    .{ 0b111, "☷" }, // rwx
+};
